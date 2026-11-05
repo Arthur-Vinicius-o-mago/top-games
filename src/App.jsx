@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
 const navigation = [
   { section: 'WORKSPACE', items: [{ id: 'overview', label: 'Visão geral', icon: '◫' }, { id: 'projects', label: 'Projetos', icon: '▤' }, { id: 'activity', label: 'Atividade', icon: '◷' }] },
@@ -10,13 +11,38 @@ function App() {
   const [name, setName] = useState('')
   const [savedNames, setSavedNames] = useState([])
   const [notice, setNotice] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return
+    const loadNames = async () => {
+      setLoading(true)
+      const { data, error } = await supabase.from('names').select('id, name').order('created_at', { ascending: false }).limit(5)
+      if (error) setNotice('Não foi possível carregar os nomes: ' + error.message)
+      else setSavedNames(data.map((item) => item.name))
+      setLoading(false)
+    }
+    loadNames()
+  }, [])
 
   const titles = { overview: ['Visão geral', 'Acompanhe seu espaço de trabalho em um só lugar.'], projects: ['Projetos', 'Organize e acompanhe seus projetos.'], activity: ['Atividade', 'Veja as últimas ações realizadas.'], settings: ['Configurações', 'Gerencie as preferências do aplicativo.'], help: ['Ajuda e suporte', 'Encontre orientações para começar.'] }
-  const saveName = (event) => {
+  const saveName = async (event) => {
     event.preventDefault()
-    if (!name.trim()) return
-    setSavedNames((items) => [name.trim(), ...items])
-    setNotice('Nome adicionado com sucesso.')
+    const cleanName = name.trim()
+    if (!cleanName) return
+
+    if (isSupabaseConfigured) {
+      setLoading(true)
+      const { error } = await supabase.from('names').insert({ name: cleanName })
+      setLoading(false)
+      if (error) {
+        setNotice('Erro ao salvar no Supabase: ' + error.message)
+        return
+      }
+    }
+
+    setSavedNames((items) => [cleanName, ...items].slice(0, 5))
+    setNotice(isSupabaseConfigured ? 'Nome salvo no Supabase com sucesso.' : 'Nome adicionado nesta sessão.')
     setName('')
   }
 
@@ -37,11 +63,11 @@ function App() {
         {page === 'overview' && <>
           <div className="welcome-card"><div className="welcome-copy"><span className="welcome-tag">✦ &nbsp; SEJA BEM-VINDO</span><h2>Ideias grandes começam<br/>com um primeiro passo.</h2><p>Seu ambiente está pronto. Vamos começar adicionando um nome?</p><a href="#add-name" onClick={() => document.getElementById('name-input')?.focus()}>Começar agora <span>→</span></a></div><div className="orb orb-one"/><div className="orb orb-two"/><div className="welcome-art"><div className="art-window"><div className="art-dots">•••</div><div className="art-line long"/><div className="art-line"/><div className="art-blocks"><i/><i/><i/></div><div className="art-line short"/></div><div className="art-badge">✳</div></div></div>
           <div className="section-title"><div><h3>Seu painel</h3><p>Um resumo do seu ambiente de teste.</p></div><span className="muted-label">ATUALIZADO AGORA</span></div>
-          <div className="stats-grid"><div className="stat-card"><div className="stat-top"><span>Nomes cadastrados</span><span className="stat-icon purple">Aa</span></div><strong>{savedNames.length.toString().padStart(2,'0')}</strong><small>Registros nesta sessão</small></div><div className="stat-card"><div className="stat-top"><span>Status do app</span><span className="stat-icon green">✓</span></div><strong className="stat-word">Operacional</strong><small>Interface pronta para uso</small></div><div className="stat-card"><div className="stat-top"><span>Banco de dados</span><span className="stat-icon orange">⌁</span></div><strong className="stat-word">Pendente</strong><small>Conexão Supabase a configurar</small></div></div>
+          <div className="stats-grid"><div className="stat-card"><div className="stat-top"><span>Nomes cadastrados</span><span className="stat-icon purple">Aa</span></div><strong>{savedNames.length.toString().padStart(2,'0')}</strong><small>Registros nesta sessão</small></div><div className="stat-card"><div className="stat-top"><span>Status do app</span><span className="stat-icon green">✓</span></div><strong className="stat-word">Operacional</strong><small>Interface pronta para uso</small></div><div className="stat-card"><div className="stat-top"><span>Banco de dados</span><span className="stat-icon orange">⌁</span></div><strong className="stat-word">{isSupabaseConfigured ? 'Conectado' : 'Pendente'}</strong><small>{isSupabaseConfigured ? 'Projeto Supabase configurado' : 'Configure as variáveis de ambiente'}</small></div></div>
           <div className="section-title form-title" id="add-name"><div><h3>Adicionar nome</h3><p>Campo de teste para a futura gravação no Supabase.</p></div><span className="required-label">CAMPO ÚNICO</span></div>
-          <form className="input-card" onSubmit={saveName}><label htmlFor="name-input">Nome</label><div className="input-row"><div className="input-wrap"><span>✎</span><input id="name-input" value={name} onChange={e => setName(e.target.value)} placeholder="Digite um nome..." maxLength={100}/></div><button type="submit" disabled={!name.trim()}>Adicionar nome <span>→</span></button></div><div className="form-foot"><span>⌁ &nbsp; Os dados serão armazenados localmente nesta demonstração.</span><span>{name.length}/100</span></div>{notice && <p className="success-message">✓ {notice}</p>}</form>
+          <form className="input-card" onSubmit={saveName}><label htmlFor="name-input">Nome</label><div className="input-row"><div className="input-wrap"><span>✎</span><input id="name-input" value={name} onChange={e => setName(e.target.value)} placeholder="Digite um nome..." maxLength={100}/></div><button type="submit" disabled={!name.trim()}>{loading ? 'Salvando...' : 'Adicionar nome'} <span>→</span></button></div><div className="form-foot"><span>⌁ &nbsp; {isSupabaseConfigured ? 'Os dados serão gravados no Supabase.' : 'Modo demonstração: configure o Supabase para persistir os dados.'}</span><span>{name.length}/100</span></div>{notice && <p className="success-message">✓ {notice}</p>}</form>
           <div className="section-title list-title"><div><h3>Últimos registros</h3><p>Nomes adicionados durante esta sessão.</p></div><span className="record-count">{savedNames.length} REGISTROS</span></div>
-          <div className="records-card">{savedNames.length ? savedNames.slice(0,5).map((item,index)=><div className="record-row" key={index}><div className="record-avatar">{item.charAt(0).toUpperCase()}</div><b>{item}</b><span>Adicionado agora</span><i>✓</i></div>) : <div className="empty-state"><span>▤</span><b>Nenhum registro por enquanto</b><p>Os nomes adicionados aparecerão aqui.</p></div>}</div>
+          <div className="records-card">{savedNames.length ? savedNames.slice(0,5).map((item,index)=><div className="record-row" key={index}><div className="record-avatar">{item.charAt(0).toUpperCase()}</div><b>{item}</b><span>Adicionado agora</span><i>✓</i></div>) : <div className="empty-state"><span>▤</span><b>{loading ? 'Carregando registros...' : 'Nenhum registro por enquanto'}</b><p>Os nomes adicionados aparecerão aqui.</p></div>}</div>
         </>}
         {page !== 'overview' && <div className="placeholder-card"><div className="placeholder-icon">{navigation.flatMap(g=>g.items).find(i=>i.id===page)?.icon || '✳'}</div><h2>{titles[page][0]}</h2><p>Esta área está preparada para evoluir nas próximas etapas do projeto.</p><button onClick={() => setPage('overview')}>Voltar ao painel <span>→</span></button></div>}
         <footer><span>© 2026 TOP GAMES</span><span>FEITO PARA CONSTRUIR O PRÓXIMO PASSO <b>✳</b></span></footer>
